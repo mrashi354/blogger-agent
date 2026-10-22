@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 PROJECT_ROOT = Path(__file__).resolve().parent
 TOPICS_FILE = PROJECT_ROOT / "topics.json"
 POSTED_LOG_FILE = PROJECT_ROOT / "posted_log.json"
+EXTERNAL_SOURCES_FILE = PROJECT_ROOT / "external_sources.json"
 IMAGES_DIR = PROJECT_ROOT / "images"
 LOGS_DIR = PROJECT_ROOT / "logs"
 
@@ -61,6 +62,8 @@ class Config:
     blog_niche: str = DEFAULT_NICHE
     blog_language: str = DEFAULT_LANGUAGE
     github_repository: str = ""
+    site_url: str = ""
+    site_name: str = ""
     draft_mode: bool = False
     tone: str = field(default_factory=lambda: random.choice(TONES))
 
@@ -122,6 +125,8 @@ def load_config(*, require_all: bool = True) -> Config:
         blog_niche=os.getenv("BLOG_NICHE", "").strip() or DEFAULT_NICHE,
         blog_language=os.getenv("BLOG_LANGUAGE", "").strip() or DEFAULT_LANGUAGE,
         github_repository=os.getenv("GITHUB_REPOSITORY", "").strip(),
+        site_url=os.getenv("SITE_URL", "").strip(),
+        site_name=os.getenv("SITE_NAME", "").strip(),
         draft_mode=_env_bool("DRAFT_MODE", False),
     )
 

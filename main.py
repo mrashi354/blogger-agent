@@ -24,6 +24,13 @@ import config as config_module
 from config import LOGS_DIR, POSTED_LOG_FILE, PROJECT_ROOT, TOPICS_FILE, Config, load_config
 from content_generator import ContentGenerator
 from image_handler import build_alt_text, fetch_image
+from linking import (
+    LinkPlan,
+    build_link_plan,
+    collect_extra_allowed,
+    render_link_sections,
+    sanitize_body_links,
+)
 
 logger = logging.getLogger("main")
 
@@ -129,13 +136,26 @@ def select_topic(topics: list[str], posted: list[dict[str, Any]]) -> str:
 # --------------------------------------------------------------------------- #
 # Rendering
 # --------------------------------------------------------------------------- #
-def render_post(post, image) -> str:
-    """Combine image block (if any) with the generated HTML body."""
-    body = post.html_body
+def render_post(post, image, cfg: Config, posted: list[dict[str, Any]]) -> tuple[str, LinkPlan]:
+    """Combine image block + generated body, append safe links, strip bad links."""
+    plan = build_link_plan(
+        cfg,
+        posted=posted,
+        labels=post.labels,
+        title=post.title,
+        topic=post.topic,
+    )
+    extra_allowed = collect_extra_allowed(image)
+    body = sanitize_body_links(post.html_body, plan.allowed_urls(), extra_allowed=extra_allowed)
+
+    sections = render_link_sections(plan)
+    if sections:
+        body = f"{body}\n{sections}"
+
     if image is not None:
         block = image.html_block()
         body = f"{block}\n{body}"
-    return body
+    return body, plan
 
 
 def save_preview(title: str, html: str, date_str: str) -> Path:
@@ -159,7 +179,7 @@ def plain_text(html: str) -> str:
     return re.sub(r"\n{2,}", "\n", text).strip()
 
 
-def print_preview(post, html: str, image, date_str: str) -> None:
+def print_preview(post, html: str, image, date_str: str, plan: LinkPlan | None = None) -> None:
     bar = "=" * 78
     print(f"\n{bar}\nDRY RUN PREVIEW - nothing was published or written\n{bar}")
     print(f"Topic        : {post.topic}")
@@ -171,6 +191,16 @@ def print_preview(post, html: str, image, date_str: str) -> None:
     print(f"HTML length  : {len(html)} chars")
     words = len(plain_text(html).split())
     print(f"Word count   : ~{words}")
+
+    if plan is not None:
+        print("\nLinks added:")
+        links = plan.all_links()
+        if links:
+            for link in links:
+                print(f"  [{link.kind}] {link.title} -> {link.url}")
+        else:
+            print("  (none)")
+
     print(f"\n{bar}\nBODY\n{bar}")
     body_text = plain_text(html)
     print(body_text[:4000])
@@ -231,11 +261,11 @@ def run(dry_run: bool, force_draft: bool, push_image_first: bool, topic: str | N
     image = fetch_image(cfg, post.search_keyword, alt, date_str)
     logger.info("Image: %s", image.public_url if image else "not found")
 
-    html = render_post(post, image)
+    html, link_plan = render_post(post, image, cfg, posted)
 
     if dry_run:
         logger.info("Step 3/5: dry run, skipping publish and log write")
-        print_preview(post, html, image, date_str)
+        print_preview(post, html, image, date_str, link_plan)
         preview = save_preview(post.title, html, date_str)
         print(f"Preview saved to: {preview}")
         logger.info("Dry run complete")

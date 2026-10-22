@@ -1,0 +1,29 @@
+{
+  "sources": [
+    {
+      "title": "Reserve Bank of India (RBI)",
+      "url": "https://www.rbi.org.in/",
+      "keywords": ["rbi", "reserve bank", "repo rate", "interest rate", "monetary policy", "central bank", "banking", "loan", "emi"]
+    },
+    {
+      "title": "SEBI - Securities and Exchange Board of India",
+      "url": "https://www.sebi.gov.in/",
+      "keywords": ["sebi", "mutual fund", "share market", "stock market", "investor", "securities", "ipo", "trading", "investment"]
+    },
+    {
+      "title": "AMFI - Association of Mutual Funds in India",
+      "url": "https://www.amfiindia.com/",
+      "keywords": ["amfi", "mutual fund", "sip", "nav", "fund", "asset management", "invest", "elss", "index fund"]
+    },
+    {
+      "title": "Income Tax Department, Government of India",
+      "url": "https://www.incometax.gov.in/",
+      "keywords": ["income tax", "tax", "itr", "tds", "tax filing", "deduction", "exemption", "80c", "tax saving", "refund"]
+    },
+    {
+      "title": "NPCI - National Payments Corporation of India",
+      "url": "https://www.npci.org.in/",
+      "keywords": ["npci", "upi", "payment", "digital payment", "rupay", "net banking", "transaction", "wallet", "imps", "neft"]
+    }
+  ]
+}
