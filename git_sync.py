@@ -36,11 +36,15 @@ def _git(*args: str) -> str:
 
 def push_image(date_str: str, *, wait_seconds: int = 10) -> bool:
     """Commit and push today's image. Returns True if something was pushed."""
-    image_path = IMAGES_DIR / f"{date_str}.jpg"
-    if not image_path.exists():
-        logger.warning("No image at %s, nothing to push", image_path)
+    # Find image matching today's date (could have hash suffix)
+    image_files = list(IMAGES_DIR.glob(f"{date_str}*.jpg"))
+    if not image_files:
+        logger.warning("No image for date %s in %s, nothing to push", date_str, IMAGES_DIR)
         return False
-
+    
+    # Use the most recent one
+    image_path = sorted(image_files)[-1]
+    
     _git("add", str(Path("images") / image_path.name))
     staged = _git("diff", "--cached", "--name-only")
     if not staged:

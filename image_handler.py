@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import time
 from dataclasses import dataclass
@@ -60,6 +61,9 @@ def _search_pixabay(api_key: str, keyword: str) -> list[dict]:
     url = f"{PIXABAY_API_URL}?{params}"
 
     response = requests.get(url, timeout=PIXABAY_TIMEOUT, headers={"User-Agent": "blogger-agent/1.0"})
+    if response.status_code == 429:
+        logger.warning("Pixabay rate limited (429), will retry with backoff")
+        raise requests.exceptions.HTTPError("429 Too Many Requests", response=response)
     response.raise_for_status()
     data = response.json()
     hits = data.get("hits") or []
@@ -124,11 +128,16 @@ def fetch_image(cfg: Config, keyword: str, alt_text: str, date_str: str) -> Fetc
         logger.warning("PIXABAY_API_KEY missing, skipping image")
         return None
 
+    # Validate GITHUB_REPOSITORY
+    repo = cfg.github_repository.strip()
+    if not repo or "=" in repo or " " in repo:
+        raise RuntimeError(f"Invalid GITHUB_REPOSITORY: '{repo}'. Must be in format 'owner/repo' with no spaces or '='")
+
     try:
         hits = retry(
             lambda: _search_pixabay(cfg.pixabay_api_key, keyword),
-            attempts=3,
-            exceptions=(Exception,),
+            attempts=5,
+            exceptions=(requests.exceptions.RequestException, Exception),
             label="pixabay-search",
         )
         candidates = _rank_hits(hits)
@@ -137,14 +146,18 @@ def fetch_image(cfg: Config, keyword: str, alt_text: str, date_str: str) -> Fetc
             return None
 
         IMAGES_DIR.mkdir(parents=True, exist_ok=True)
-        destination = IMAGES_DIR / f"{date_str}.jpg"
+        # Create unique filename per post (date plus short hash)
+        hash_input = f"{date_str}-{keyword}-{time.time()}"
+        short_hash = hashlib.md5(hash_input.encode()).hexdigest()[:8]
+        filename = f"{date_str}-{short_hash}.jpg"
+        destination = IMAGES_DIR / filename
 
         best: dict | None = None
         for hit in candidates[:MAX_CANDIDATES]:
             try:
                 retry(
                     lambda hit=hit: _download(hit, destination),
-                    attempts=2,
+                    attempts=3,
                     exceptions=(Exception,),
                     label="pixabay-download",
                 )
@@ -158,11 +171,7 @@ def fetch_image(cfg: Config, keyword: str, alt_text: str, date_str: str) -> Fetc
             logger.warning("All %d Pixabay candidates failed to download", min(MAX_CANDIDATES, len(candidates)))
             return None
 
-        filename = destination.name
-        if cfg.github_repository:
-            public_url = CDN_TEMPLATE.format(repo=cfg.github_repository, filename=filename)
-        else:
-            public_url = destination.as_uri()
+        public_url = CDN_TEMPLATE.format(repo=repo, filename=filename)
 
         author = (best.get("user") or "").strip()
         credit_line = f" ({author} on Pixabay)" if author else ""
@@ -175,6 +184,8 @@ def fetch_image(cfg: Config, keyword: str, alt_text: str, date_str: str) -> Fetc
             credit_line=credit_line,
             attribution=best.get("pageURL", ""),
         )
+    except RuntimeError:
+        raise
     except Exception as exc:  # noqa: BLE001 - image failure must not kill the post
         logger.error("Image fetch failed (post will publish without image): %s", exc)
         return None

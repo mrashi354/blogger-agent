@@ -21,14 +21,16 @@ MAX_LABELS = 5
 MIN_HARD_FLOOR = 300
 LENGTH_ATTEMPTS = 3
 FORBIDDEN_TAGS = ("<html", "<body", "<!doctype", "<head")
+DISCLAIMER_LINE = "Ye general jaankari hai, financial advice nahi"
+
 
 SYSTEM_PROMPT = """You are a senior blog writer for a personal finance blog.
 
 Hard rules you must always follow:
 - Write original, genuinely helpful content for a general reader. Never invent
-  statistics, studies, surveys, expert quotes, regulations, or numbers presented
+  statistics, studies, surveys, expert quotes, regulations, laws, percentages or numbers presented
   as facts. If a figure is needed and you are not certain, write the guidance
-  qualitatively instead of inventing a number.
+  qualitatively instead of inventing a number. Keep financial advice general.
 - No keyword stuffing. Use natural language; the main topic should appear only
   where it reads naturally.
 - You must not copy text from anywhere; write it fresh.
@@ -44,13 +46,14 @@ Output format:
   "meta_description"      : 140-160 characters, plain text, no quotes.
 
 HTML rules for html_body:
+- Output PURE HTML only. NEVER use markdown. Do NOT use **, ##, or any markdown characters.
 - A fragment only. No <html>, <head>, <body>, <!DOCTYPE> or inline CSS.
 - Start with 2-3 short sentences as an intro paragraph.
 - Then 3 to 5 <h2> sections; use <h3> subsections only if a section is long.
 - Write every heading in {language}, exactly like the body text. Never leave a
   heading in English when the body is not English.
-- Use <ul><li> bullet lists where they genuinely help.
-- End with an <h2> conclusion plus a short closing paragraph.
+- Use <ul><li><strong>..</strong></li></ul> for lists where they genuinely help. Always keep a space between words and after closing tags.
+- End with an <h2> conclusion plus a short closing paragraph, followed by the exact one-line disclaimer: Ye general jaankari hai, financial advice nahi
 - Use <strong> sparingly for emphasis.
 - Roughly {min_words} to {max_words} words total. Aim for the upper half of that
   range so the post never falls short of {min_words} words.
@@ -93,12 +96,38 @@ def _strip_code_fences(text: str) -> str:
     return cleaned.strip()
 
 
+def _sanitize_model_output(raw: str) -> str:
+    """Sanitize raw model output to be more JSON-tolerant."""
+    cleaned = _strip_code_fences(raw)
+    # Try to extract JSON object if there's extra text
+    if not cleaned.strip().startswith("{"):
+        match = re.search(r'\{.*\}', cleaned, re.DOTALL)
+        if match:
+            cleaned = match.group(0)
+    # Fix common escape issues
+    cleaned = cleaned.replace('\\n', '\\n')  # keep as is but be defensive
+    return cleaned.strip()
+
+
+def _strip_markdown_from_html(html_body: str) -> str:
+    """Strip markdown artifacts like ** and ## from HTML."""
+    # Remove ** markdown bold
+    html_body = re.sub(r'\*\*([^*]+)\*\*', r'\1', html_body)
+    html_body = re.sub(r'\*([^*]+)\*', r'\1', html_body)
+    # Remove ## headings that might leak as markdown
+    html_body = re.sub(r'^#{1,6}\s+.*$', '', html_body, flags=re.M)
+    # Clean up extra spaces
+    html_body = re.sub(r'\s+', ' ', html_body)
+    return html_body.strip()
+
+
 def validate_payload(payload: Any) -> GeneratedPost:
     """Validate the raw JSON object from the model and return a GeneratedPost."""
     if not isinstance(payload, dict):
         raise ContentValidationError(f"Expected a JSON object, got {type(payload).__name__}")
 
-    missing = [key for key in REQUIRED_KEYS if key not in payload]
+    # Ensure all required keys are present
+    missing = [key for key in REQUIRED_KEYS if key not in payload or payload[key] is None]
     if missing:
         raise ContentValidationError(f"Missing keys: {', '.join(missing)}")
 
@@ -107,12 +136,24 @@ def validate_payload(payload: Any) -> GeneratedPost:
     meta_description = str(payload["meta_description"]).strip()
     search_keyword = str(payload["search_keyword"]).strip()
 
+    # Strip markdown artifacts
+    html_body = _strip_markdown_from_html(html_body)
+    title = title.replace('**', '').replace('##', '').strip()
+    meta_description = meta_description.replace('**', '').replace('##', '').strip()
+    search_keyword = search_keyword.replace('**', '').replace('##', '').strip()
+
+    # Check for leftover markdown
+    if '**' in html_body or '##' in html_body:
+        raise ContentValidationError("html_body contains markdown artifacts (** or ##)")
+
     if not title:
         raise ContentValidationError("title is empty")
     if len(title) > 90:
         title = title[:87].rstrip() + "..."
     if not search_keyword:
         raise ContentValidationError("search_keyword is empty")
+    if not meta_description:
+        raise ContentValidationError("meta_description is empty")
 
     lower_body = html_body.lower()
     for tag in FORBIDDEN_TAGS:
@@ -141,6 +182,14 @@ def validate_payload(payload: Any) -> GeneratedPost:
         raise ContentValidationError(
             f"meta_description length {len(meta_description)} out of range"
         )
+
+    # Ensure space after closing tags and between words
+    html_body = re.sub(r'>\s*<', '> <', html_body)
+    html_body = re.sub(r'\s+', ' ', html_body)
+
+    # Add disclaimer if not present
+    if DISCLAIMER_LINE not in html_body:
+        html_body = html_body.rstrip() + f" <p>{DISCLAIMER_LINE}</p>"
 
     return GeneratedPost(
         title=title,
@@ -218,16 +267,26 @@ class ContentGenerator:
 
         logger.debug("Raw model output (%d chars)", len(raw))
 
+        # Try to parse with sanitization
+        sanitized = _sanitize_model_output(raw)
         try:
-            payload = json.loads(_strip_code_fences(raw))
+            payload = json.loads(sanitized)
         except json.JSONDecodeError as exc:
-            raise ContentValidationError(f"Model returned invalid JSON: {exc}") from exc
+            # Try more aggressive sanitization
+            try:
+                # Remove control characters and fix escapes
+                sanitized2 = re.sub(r'[\x00-\x1f\x7f-\x9f]', ' ', sanitized)
+                # Try to fix common issues
+                sanitized2 = sanitized2.replace('\\/', '/')
+                payload = json.loads(sanitized2)
+            except json.JSONDecodeError:
+                raise ContentValidationError(f"Model returned invalid JSON: {exc}") from exc
         return validate_payload(payload)
 
     def _generate_once(self, prompt: str) -> GeneratedPost:
         return retry(
             lambda: self._call_model(prompt),
-            attempts=3,
+            attempts=5,
             exceptions=(Exception,),
             label="llm-generate",
         )
@@ -255,6 +314,13 @@ class ContentGenerator:
         words = word_count(post.html_body)
         attempt = 1
 
+        # Check for markdown and regenerate if found
+        if '**' in post.html_body or '##' in post.html_body or re.search(r'^\s*#{1,6}\s', post.html_body, re.M):
+            logger.warning("Markdown artifacts found, regenerating")
+            nudge_md = "\n\nCRITICAL: Output PURE HTML ONLY. NO markdown. Use <ul><li><strong>text</strong></li></ul> for lists. NO ** or ## characters anywhere."
+            post = self._generate_once(prompt + nudge_md)
+            words = word_count(post.html_body)
+
         while words < self.cfg.min_words and attempt < LENGTH_ATTEMPTS:
             attempt += 1
             logger.warning(
@@ -269,10 +335,13 @@ class ContentGenerator:
                 "This time write a much fuller post: at least {min_words} words "
                 "and no more than {max_words}. Add more sections, more detail in "
                 "each bullet point, and longer explanations. Do not repeat the "
-                "structure you used before, expand it."
+                "structure you used before, expand it. Output PURE HTML only, no markdown."
             ).format(words=words, min_words=self.cfg.min_words, max_words=self.cfg.max_words)
             post = self._generate_once(prompt + nudge)
             words = word_count(post.html_body)
+            if '**' in post.html_body or '##' in post.html_body:
+                attempt = LENGTH_ATTEMPTS  # force regenerate again
+                break
 
         if words < self.cfg.min_words:
             logger.warning(

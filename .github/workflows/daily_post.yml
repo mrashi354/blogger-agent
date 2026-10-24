@@ -28,7 +28,7 @@ jobs:
     env:
       LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
       LLM_MODEL: ${{ secrets.LLM_MODEL }}
-      LLM_BASE_URL: https://api.groq.com/openai/v1
+      LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
       PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
       GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
       GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
@@ -37,6 +37,8 @@ jobs:
       DRAFT_MODE: ${{ secrets.DRAFT_MODE }}
       BLOG_NICHE: ${{ secrets.BLOG_NICHE }}
       BLOG_LANGUAGE: ${{ secrets.BLOG_LANGUAGE }}
+      SITE_URL: ${{ secrets.SITE_URL }}
+      SITE_NAME: ${{ secrets.SITE_NAME }}
       GITHUB_REPOSITORY: ${{ github.repository }}
 
     steps:
@@ -54,7 +56,7 @@ jobs:
       - name: Preflight - fail fast if a secret is missing
         run: |
           missing=""
-          for name in LLM_API_KEY LLM_MODEL PIXABAY_API_KEY GOOGLE_CLIENT_ID \
+          for name in LLM_API_KEY LLM_MODEL LLM_BASE_URL PIXABAY_API_KEY GOOGLE_CLIENT_ID \
                       GOOGLE_CLIENT_SECRET GOOGLE_REFRESH_TOKEN BLOG_ID \
                       DRAFT_MODE BLOG_NICHE BLOG_LANGUAGE; do
             if [ -z "${!name}" ]; then
@@ -66,7 +68,11 @@ jobs:
             echo "Add them under Settings -> Secrets and variables -> Actions."
             exit 1
           fi
-          echo "All 10 required secrets are present."
+          echo "All required secrets are present."
+          if [ -z "$GITHUB_REPOSITORY" ]; then
+            echo "::error::GITHUB_REPOSITORY is empty"
+            exit 1
+          fi
 
       - name: Install dependencies
         run: |

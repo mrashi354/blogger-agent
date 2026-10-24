@@ -212,17 +212,24 @@ def print_preview(post, html: str, image, date_str: str, plan: LinkPlan | None =
 # --------------------------------------------------------------------------- #
 # posted_log.json
 # --------------------------------------------------------------------------- #
-def append_posted_log(date_str: str, topic: str, title: str, url: str, labels: list[str]) -> None:
+def append_posted_log(date_str: str, topic: str, title: str, url: str, labels: list[str], post_id: str = "", is_draft: bool = False) -> None:
     entries = load_posted_log()
-    entries.append(
-        {
-            "date": date_str,
-            "topic": topic,
-            "title": title,
-            "url": url,
-            "labels": labels,
-        }
-    )
+    # When draft mode is on, do not store the blog homepage as a post URL for internal linking
+    # Store the Blogger post id and mark it as draft
+    log_entry = {
+        "date": date_str,
+        "topic": topic,
+        "title": title,
+        "labels": labels,
+        "post_id": post_id,
+        "is_draft": is_draft,
+    }
+    if is_draft:
+        # Don't store homepage URL for internal linking in draft mode
+        log_entry["url"] = f"draft:{post_id}" if post_id else url
+    else:
+        log_entry["url"] = url
+    entries.append(log_entry)
     payload = {"posts": entries}
     with POSTED_LOG_FILE.open("w", encoding="utf-8") as fh:
         json.dump(payload, fh, indent=2, ensure_ascii=False)
@@ -292,7 +299,7 @@ def run(dry_run: bool, force_draft: bool, push_image_first: bool, topic: str | N
 
     logger.info("Step 5/6: publish done -> %s", published.url)
     logger.info("Step 6/6: recording in posted_log.json")
-    append_posted_log(date_str, topic, post.title, published.url, post.labels)
+    append_posted_log(date_str, topic, post.title, published.url, post.labels, post_id=published.post_id, is_draft=published.is_draft)
 
     print("\n" + "=" * 78)
     print(f"{'DRAFT' if published.is_draft else 'PUBLISHED'}: {post.title}")
