@@ -128,10 +128,16 @@ def fetch_image(cfg: Config, keyword: str, alt_text: str, date_str: str) -> Fetc
         logger.warning("PIXABAY_API_KEY missing, skipping image")
         return None
 
-    # Validate GITHUB_REPOSITORY
+    # The CDN URL needs a valid owner/repo. Locally this may be unset, which is
+    # fine: skip the image instead of failing the whole run.
     repo = cfg.github_repository.strip()
-    if not repo or "=" in repo or " " in repo:
-        raise RuntimeError(f"Invalid GITHUB_REPOSITORY: '{repo}'. Must be in format 'owner/repo' with no spaces or '='")
+    if not repo or "=" in repo or " " in repo or "/" not in repo:
+        logger.warning(
+            "GITHUB_REPOSITORY is missing or invalid (%r); skipping image. "
+            "Set it to 'owner/repo' to publish a CDN image URL.",
+            repo,
+        )
+        return None
 
     try:
         hits = retry(

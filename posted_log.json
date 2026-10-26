@@ -34,6 +34,20 @@
         "personal finance",
         "india"
       ]
+    },
+    {
+      "date": "2026-10-26",
+      "topic": "How to cut grocery bills without eating boring food",
+      "title": "Grocery Bills Kaise Cut Karein Bina Bored Khane Ke",
+      "labels": [
+        "grocery",
+        "budget",
+        "mealplan",
+        "savemoney"
+      ],
+      "post_id": "1088099955986427102",
+      "is_draft": true,
+      "url": "draft:1088099955986427102"
     }
   ]
 }

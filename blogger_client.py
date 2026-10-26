@@ -86,10 +86,15 @@ def publish_post(
 
     result = retry(_insert, attempts=3, exceptions=(Exception,), label="blogger-insert")
 
-    url = result.get("url") or (
-        f"https://draft.blogger.com/post-edit/{cfg.blog_id}/{result['id']}"
-    )
     is_draft = result.get("status") == "DRAFT"
+    if is_draft:
+        # Blogger returns the blog homepage for drafts, which is not useful.
+        edit_url = f"https://draft.blogger.com/post-edit/{cfg.blog_id}/{result['id']}"
+        url = edit_url
+    else:
+        url = result.get("url") or (
+            f"https://draft.blogger.com/post-edit/{cfg.blog_id}/{result['id']}"
+        )
     state = "DRAFT" if is_draft else "PUBLISHED"
     logger.info("Post %s -> %s (%s)", result["id"], url, state)
 

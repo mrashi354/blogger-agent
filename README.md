@@ -76,11 +76,12 @@ Blogger me draft post dikhega. Theek lage toh `DRAFT_MODE=false` karke live kare
 
 Repo -> **Settings -> Secrets and variables -> Actions -> New repository secret**
 
-Ye 10 secrets add karo:
+Ye 11 secrets add karo:
 
 ```
 LLM_API_KEY
 LLM_MODEL
+LLM_BASE_URL
 PIXABAY_API_KEY
 GOOGLE_CLIENT_ID
 GOOGLE_CLIENT_SECRET
